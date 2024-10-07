@@ -54,11 +54,11 @@ pub fn init_players() -> Vec<Player> {
     indices.shuffle(&mut rng);
 
     for index in 0..COUNT {
-        players.push(Player::new(roles.get(indices[index]).unwrap().clone()));
+        players.push(Player::new(index, roles.get(indices[index]).unwrap().clone()));
     }
 
-    for player in players.iter().clone() {
-        println!("{:?}", player.role);
+    for (index, player) in players.iter().enumerate() {
+        println!("{} - {:?}", index, player.role);
     }
 
     players
@@ -69,22 +69,27 @@ pub fn start_vote(players: Vec<Player>) {
     let mut rng = rand::thread_rng();
     let mut car_leader: usize = rng.gen_range(0..COUNT);
 
-    let mut vote_res: Vec<(Vote, &Box<dyn Role>)> = vec![];
-    for round in car_round.iter() {
-        println!("leader:{:?}", players[car_leader % COUNT].role);
-        for index in 0..*round {
+    let mut vote_res_role: Vec<(Vote, &Box<dyn Role>)> = vec![];
+    let mut vote_res: Vec<Vote> = vec![];
+    for (round, round_size) in car_round.iter().enumerate() {
+        println!("round: {}, round_size:{}", round, round_size);
+        println!("leader:{}-{:?}", car_leader, players[car_leader % COUNT].role);
+        for index in 0..*round_size {
             let real_index = (index + car_leader) % COUNT;
-            let vote = players[real_index].role.vote_with_round(*round as u32);
-            vote_res.push((vote, players[real_index].role.as_ref()));
+            let vote = players[real_index].role.vote_with_round(round as u32);
+            vote_res_role.push((vote, players[real_index].role.as_ref()));
+            vote_res.push(vote);
         }
-        println!("{:?}", vote_res);
+        println!("{:?}", vote_res_role);
+        println!("===================发车{}===================", check_vote_res(&vote_res));
         vote_res.clear();
+        vote_res_role.clear();
+        // todo car_leader 只是简单+1
         car_leader += 1;
     }
 }
 
-pub fn check_vote_res() -> bool{
-    let mut res = false;
-    
-    res
+
+pub fn check_vote_res(vote_res: &Vec<Vote>) -> bool {
+    !vote_res.contains(&Vote::Reject)
 }
