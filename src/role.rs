@@ -1,6 +1,7 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::Debug;
-use std::sync::Arc;
+use std::rc::Rc;
 
 use crate::role::Camp::{Bad, Good, UNKNOWN};
 use crate::role::Vote::{Approve, Reject};
@@ -10,7 +11,7 @@ const B: i32 = 10;
 const C: i32 = 5;
 
 
-pub type RoleImpl = Arc<Box<dyn Role>>;
+pub type RoleImpl = Rc<RefCell<Box<dyn Role>>>;
 
 #[derive(Debug, PartialOrd, PartialEq, Clone, Copy)]
 pub enum Vote {
@@ -35,13 +36,14 @@ pub enum Description {
     Assassin,
 }
 
+#[derive(Clone, Debug)]
 pub struct Player {
-    pub(crate) id: usize,
+    pub(crate) id: u32,
     pub(crate) role: RoleImpl,
 }
 
 impl Player {
-    pub fn new(id: usize, role: RoleImpl) -> Self {
+    pub fn new(id: u32, role: RoleImpl) -> Self {
         Self { id, role }
     }
 }
@@ -58,41 +60,47 @@ pub trait Role: Debug + Send + Sync {
 
     // 阵营
     fn get_role_camp(&self) -> Camp;
+
+    fn info(&self) -> String;
 }
 
 #[derive(Debug)]
-pub struct LoyalOfficial {
-    score: Vec<i32>,
+struct GoodRoleImpl {
+    pub score: Vec<i32>,
 }
-impl LoyalOfficial {
-    fn default(size: usize) -> Self {
+impl GoodRoleImpl {
+    fn new(score: Vec<i32>) -> Self {
         Self {
-            score: Vec::with_capacity(size),
+            score
         }
     }
 }
-impl Role for LoyalOfficial {
+impl Role for GoodRoleImpl {
     fn proposal_for_car(&self, id: u32, car: &Vec<Player>) -> bool {
-        // 目前是最简单的方案，好人通过对应成员的分数是否大于0进行表决
-        !car.iter().any(|player| self.score[player.id] < 0)
+        // 基本策略：好人通过对应成员的分数是否大于0进行表决
+        !car.iter().any(|player| self.score[player.id as usize] < 0)
     }
 
-    fn vote_with_round(&self, _round: i32) -> Vote {
+    fn vote_with_round(&self, round: i32) -> Vote {
+        // 基本策略：好人无脑投赞成票
         Approve
     }
 
     fn update_self_info(&mut self, round: i32, map: &HashMap<i32, (Vec<Player>, u32)>) {
+        // println!("update_self_info");
+        // 基本策略：好人通过加分减分更新对局势的判断
         if let Some(value) = map.get(&round) {
-            let car: Vec<usize> = value.0.iter().map(|index| index.id).collect();
+            let car: Vec<u32> = value.0.iter().map(|index| index.id).collect();
             let reject_res = value.1;
+            // println!("round : {:?} car: {:?} reject_res:{:?}", round, car, reject_res);
             if reject_res == 0 {
                 // 车队通过，每人+20
                 for index in car {
-                    self.score[index] += A;
+                    self.score[index as usize] += A;
                 }
             } else {
                 let mut pre_round = round - 1;
-                let mut pre_car: Vec<usize> = Vec::new();
+                let mut pre_car: Vec<u32> = Vec::new();
                 // 循环找到上一个通过的车队
                 while let Some(pre_value) = map.get(&pre_round) {
                     if pre_value.1 == 0 {
@@ -101,14 +109,15 @@ impl Role for LoyalOfficial {
                     }
                     pre_round -= 1;
                 }
+                // println!("pre_round : {:?} pre_car: {:?}", pre_round, pre_car);
                 if !pre_car.is_empty() {
                     // 与上一个通过的车队进行diff
-                    let diff: Vec<usize> = car.clone().into_iter()
+                    let diff: Vec<u32> = car.clone().into_iter()
                         .filter(|item| !pre_car.contains(item))
                         .collect();
-                    for index in 0..self.score.len() {
+                    for index in car {
                         // 上一轮车发成功，这一轮没成功，diff -20 ，剩下的 -5 * reject_res
-                        self.score[index] -= if diff.contains(&index) { A } else { C * (reject_res as i32) };
+                        self.score[index as usize] -= if diff.contains(&index) { A } else { C * (reject_res as i32) };
                     }
                 } else {
                     // 没有找到之前通过的车队，所以这次每人进行减分
@@ -122,112 +131,238 @@ impl Role for LoyalOfficial {
         }
     }
 
+    fn get_role_camp(&self) -> Camp {
+        Good
+    }
+
+    fn info(&self) -> String {
+        format!("GoodRoleImpl")
+    }
+}
+
+#[derive(Debug)]
+struct BadRoleImpl {}
+
+impl Role for BadRoleImpl {
+    fn proposal_for_car(&self, id: u32, car: &Vec<Player>) -> bool {
+        // 基本策略：判断车队有自己，或者有同伴才同意发车
+        car.iter().any(|player| player.id == id) || car.iter().any(|player| player.role.borrow().get_role_camp() == Bad)
+    }
+
+    fn vote_with_round(&self, round: i32) -> Vote {
+        if round == 0 {
+            Approve
+        } else {
+            Reject
+        }
+    }
+
+    fn update_self_info(&mut self, round: i32, map: &HashMap<i32, (Vec<Player>, u32)>) {
+        // do noting
+    }
+
+    fn get_role_camp(&self) -> Camp {
+        Bad
+    }
+
+    fn info(&self) -> String {
+        format!("[BadRoleImpl]")
+    }
+}
+
+#[derive(Debug)]
+pub struct LoyalOfficial {
+    proxy: GoodRoleImpl,
+}
+impl LoyalOfficial {
+    pub fn default(size: usize) -> Self {
+        Self {
+            proxy: GoodRoleImpl::new(vec![0; size])
+        }
+    }
+}
+impl Role for LoyalOfficial {
+    fn proposal_for_car(&self, id: u32, car: &Vec<Player>) -> bool {
+        self.proxy.proposal_for_car(id, car)
+    }
+
+    fn vote_with_round(&self, round: i32) -> Vote {
+        self.proxy.vote_with_round(round)
+    }
+
+    fn update_self_info(&mut self, round: i32, map: &HashMap<i32, (Vec<Player>, u32)>) {
+        self.proxy.update_self_info(round, map)
+    }
+
 
     fn get_role_camp(&self) -> Camp {
         Good
     }
+
+    fn info(&self) -> String {
+        format!("[LoyalOfficial + {:?}]", self.proxy.score)
+    }
 }
 #[derive(Debug)]
-pub struct Merlin {}
+pub struct Merlin {
+    proxy: GoodRoleImpl,
+}
+impl Merlin {
+    pub fn default(size: usize) -> Self {
+        Self {
+            proxy: GoodRoleImpl::new(vec![0; size])
+        }
+    }
+}
 impl Role for Merlin {
-    fn proposal_for_car(&self, id: u32, car: &Vec<Player>) -> bool {
+    fn proposal_for_car(&self, _id: u32, car: &Vec<Player>) -> bool {
         // 策略一：梅林判断若车队有任何一个坏蛋都不同意
-        car.iter().any(|player| player.role.get_role_camp() == Bad)
+        car.iter().any(|player| player.role.borrow().get_role_camp() == Bad)
+    }
+
+    fn vote_with_round(&self, round: i32) -> Vote {
+        self.proxy.vote_with_round(round)
+    }
+
+    fn update_self_info(&mut self, round: i32, map: &HashMap<i32, (Vec<Player>, u32)>) {
+        self.proxy.update_self_info(round, map)
+    }
+
+
+    fn get_role_camp(&self) -> Camp {
+        UNKNOWN
+    }
+
+    fn info(&self) -> String {
+        format!("[Merlin, score:{:?}]", self.proxy.score)
+    }
+}
+#[derive(Debug)]
+pub struct Pai {
+    proxy: GoodRoleImpl,
+}
+impl Pai {
+    pub fn default(size: usize) -> Self {
+        Self {
+            proxy: GoodRoleImpl::new(vec![0; size])
+        }
+    }
+}
+impl Role for Pai {
+    fn proposal_for_car(&self, id: u32, car: &Vec<Player>) -> bool {
+        self.proxy.proposal_for_car(id, car)
     }
 
     fn vote_with_round(&self, _round: i32) -> Vote {
         Approve
+    }
+
+    fn update_self_info(&mut self, round: i32, map: &HashMap<i32, (Vec<Player>, u32)>) {
+        self.proxy.update_self_info(round, map)
+    }
+
+    fn get_role_camp(&self) -> Camp {
+        Good
+    }
+
+    fn info(&self) -> String {
+        format!("[Pai + {:?}]", self.proxy.score)
+    }
+}
+#[derive(Debug)]
+pub struct Morgana {
+    proxy: BadRoleImpl,
+}
+impl Morgana {
+    pub fn default() -> Self {
+        Self {
+            proxy: BadRoleImpl {}
+        }
+    }
+}
+impl Role for Morgana {
+    fn proposal_for_car(&self, id: u32, car: &Vec<Player>) -> bool {
+        // 策略一：莫甘娜判断车队有自己，并且没有同伴才发车
+        car.iter().any(|player| player.id == id) && !car.iter().any(|player| player.role.borrow().get_role_camp() == Bad)
+    }
+
+    fn vote_with_round(&self, round: i32) -> Vote {
+        self.proxy.vote_with_round(round)
+    }
+
+    fn update_self_info(&mut self, round: i32, map: &HashMap<i32, (Vec<Player>, u32)>) {
+        // do noting
+    }
+
+    fn get_role_camp(&self) -> Camp {
+        UNKNOWN
+    }
+
+    fn info(&self) -> String {
+        format!("[Morgana]")
+    }
+}
+#[derive(Debug)]
+pub struct Pawn {
+    proxy: BadRoleImpl,
+}
+impl Pawn {
+    pub fn default() -> Self {
+        Self {
+            proxy: BadRoleImpl {}
+        }
+    }
+}
+impl Role for Pawn {
+    fn proposal_for_car(&self, id: u32, car: &Vec<Player>) -> bool {
+        self.proxy.proposal_for_car(id, car)
+    }
+
+    fn vote_with_round(&self, round: i32) -> Vote {
+        self.proxy.vote_with_round(round)
     }
 
     fn update_self_info(&mut self, round: i32, map: &HashMap<i32, (Vec<Player>, u32)>) {
         // do nothing!
     }
 
-
     fn get_role_camp(&self) -> Camp {
-        UNKNOWN
+        Bad
+    }
+
+    fn info(&self) -> String {
+        format!("[Pawn]")
     }
 }
 #[derive(Debug)]
-pub struct Pai {
-    score: Vec<i32>,
+pub struct Assassin {
+    proxy: BadRoleImpl,
 }
-impl Pai {
-    fn default(size: usize) -> Self {
+impl Assassin {
+    pub fn default() -> Self {
         Self {
-            score: Vec::with_capacity(size),
+            proxy: BadRoleImpl {}
         }
     }
 }
-impl Role for Pai {
+impl Role for Assassin {
     fn proposal_for_car(&self, id: u32, car: &Vec<Player>) -> bool {
-        // 策略一：通过对应成员的分数是否大于0进行表决
-        !car.iter().any(|player| self.score[player.id] < 0)
+        self.proxy.proposal_for_car(id, car)
     }
 
-    fn vote_with_round(&self, _round: i32) -> Vote {
-        Approve
+    fn vote_with_round(&self, round: i32) -> Vote {
+        self.proxy.vote_with_round(round)
     }
 
-    fn update_self_info(&mut self, _round: i32, _map: &HashMap<i32, (Vec<Player>, u32)>) {
+    fn update_self_info(&mut self, round: i32, map: &HashMap<i32, (Vec<Player>, u32)>) {
         // do nothing
     }
 
     fn get_role_camp(&self) -> Camp {
-        Good
-    }
-}
-#[derive(Debug)]
-pub struct Morgana {}
-impl Role for Morgana {
-    fn proposal_for_car(&self, id: u32, car: &Vec<Player>) -> bool {
-        // 策略一：莫甘娜判断车队没有自己，或者有自己但有任何一个坏蛋都不同意发车
-        car.iter().any(|player| player.role.get_role_camp() == Bad)
-    }
-
-    fn vote_with_round(&self, round: i32) -> Vote {
-        if round == 0 {
-            Approve
-        } else {
-            Reject
-        }
-    }
-
-    fn update_self_info(&mut self, round: i32, map: &HashMap<i32, (Vec<Player>, u32)>) {
-        todo!()
-    }
-
-    fn get_role_camp(&self) -> Camp {
-        UNKNOWN
-    }
-}
-#[derive(Debug)]
-pub struct Pawn {}
-impl Role for Pawn {
-    fn vote_with_round(&self, round: i32) -> Vote {
-        if round == 0 {
-            Approve
-        } else {
-            Reject
-        }
-    }
-
-    fn get_role_camp(&self) -> Camp {
         Bad
     }
-}
-#[derive(Debug)]
-pub struct Assassin {}
-impl Role for Assassin {
-    fn vote_with_round(&self, round: i32) -> Vote {
-        if round == 0 {
-            Approve
-        } else {
-            Reject
-        }
-    }
 
-    fn get_role_camp(&self) -> Camp {
-        Bad
+    fn info(&self) -> String {
+        format!("[Assassin]")
     }
 }
