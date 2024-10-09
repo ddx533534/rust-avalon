@@ -132,7 +132,7 @@ pub fn vote_for_car(round: usize, car: Vec<Player>, players: &Vec<Player>, map: 
     }
     map.insert(round as i32, (car, count_vote_res(&vote_res)));
     for player in players {
-        player.role.borrow_mut().update_self_info(round as i32, &map);
+        player.role.borrow_mut().update_after_vote(round as i32, &map);
     }
     // println!("投票情况: {}", vote_res_info);
     // println!("{:?}", map.get(&(round as i32)).unwrap().0);

@@ -49,14 +49,18 @@ impl Player {
 }
 
 pub trait Role: Debug + Send + Sync {
-    // 投票前是否同意发车
+    
+    // 组装车队
+    fn build_for_car(&self, id: u32, size: i32, map: &HashMap<i32, (Vec<Player>, u32)>) -> Vec<i32>;
+
+    // 投票前是否同意车队阵容
     fn proposal_for_car(&self, id: u32, car: &Vec<Player>) -> bool;
 
     // 投票
     fn vote_with_round(&self, round: i32) -> Vote;
 
     // 投票后更新信息
-    fn update_self_info(&mut self, round: i32, map: &HashMap<i32, (Vec<Player>, u32)>);
+    fn update_after_vote(&mut self, round: i32, map: &HashMap<i32, (Vec<Player>, u32)>);
 
     // 阵营
     fn get_role_camp(&self) -> Camp;
@@ -76,9 +80,19 @@ impl GoodRoleImpl {
     }
 }
 impl Role for GoodRoleImpl {
-    fn proposal_for_car(&self, id: u32, car: &Vec<Player>) -> bool {
-        // 基本策略：好人通过对应成员的分数是否大于0进行表决
-        !car.iter().any(|player| self.score[player.id as usize] < 0)
+    fn build_for_car(&self, id: u32, size: i32) -> Vec<i32> {
+        todo!()
+    }
+
+    fn proposal_for_car(&self, _id: u32, car: &Vec<Player>) -> bool {
+        // 基本策略：通过对应成员的分数是否大于0进行表决
+        // !car.iter().any(|player| self.score[player.id as usize] < 0)
+        // 调整为：判断当前发车成员是否是top N？
+        let len = car.len();
+        let mut scores = self.score.clone();
+        scores.sort_by(|a, b| b.cmp(a));
+        let top_scores = &scores[0..len];
+        car.iter().all(|player| top_scores.contains(&self.score[player.id as usize]))
     }
 
     fn vote_with_round(&self, round: i32) -> Vote {
@@ -86,7 +100,7 @@ impl Role for GoodRoleImpl {
         Approve
     }
 
-    fn update_self_info(&mut self, round: i32, map: &HashMap<i32, (Vec<Player>, u32)>) {
+    fn update_after_vote(&mut self, round: i32, map: &HashMap<i32, (Vec<Player>, u32)>) {
         // println!("update_self_info");
         // 基本策略：好人通过加分减分更新对局势的判断
         if let Some(value) = map.get(&round) {
@@ -96,7 +110,7 @@ impl Role for GoodRoleImpl {
             if reject_res == 0 {
                 // 车队通过，每人+20
                 for index in car {
-                    self.score[index as usize] += A;
+                    self.score[index as usize] += B;
                 }
             } else {
                 let mut pre_round = round - 1;
@@ -157,7 +171,7 @@ impl Role for BadRoleImpl {
         }
     }
 
-    fn update_self_info(&mut self, round: i32, map: &HashMap<i32, (Vec<Player>, u32)>) {
+    fn update_after_vote(&mut self, round: i32, map: &HashMap<i32, (Vec<Player>, u32)>) {
         // do noting
     }
 
@@ -190,8 +204,8 @@ impl Role for LoyalOfficial {
         self.proxy.vote_with_round(round)
     }
 
-    fn update_self_info(&mut self, round: i32, map: &HashMap<i32, (Vec<Player>, u32)>) {
-        self.proxy.update_self_info(round, map)
+    fn update_after_vote(&mut self, round: i32, map: &HashMap<i32, (Vec<Player>, u32)>) {
+        self.proxy.update_after_vote(round, map)
     }
 
 
@@ -224,8 +238,8 @@ impl Role for Merlin {
         self.proxy.vote_with_round(round)
     }
 
-    fn update_self_info(&mut self, round: i32, map: &HashMap<i32, (Vec<Player>, u32)>) {
-        self.proxy.update_self_info(round, map)
+    fn update_after_vote(&mut self, round: i32, map: &HashMap<i32, (Vec<Player>, u32)>) {
+        self.proxy.update_after_vote(round, map)
     }
 
 
@@ -257,8 +271,8 @@ impl Role for Pai {
         Approve
     }
 
-    fn update_self_info(&mut self, round: i32, map: &HashMap<i32, (Vec<Player>, u32)>) {
-        self.proxy.update_self_info(round, map)
+    fn update_after_vote(&mut self, round: i32, map: &HashMap<i32, (Vec<Player>, u32)>) {
+        self.proxy.update_after_vote(round, map)
     }
 
     fn get_role_camp(&self) -> Camp {
@@ -290,7 +304,7 @@ impl Role for Morgana {
         self.proxy.vote_with_round(round)
     }
 
-    fn update_self_info(&mut self, round: i32, map: &HashMap<i32, (Vec<Player>, u32)>) {
+    fn update_after_vote(&mut self, round: i32, map: &HashMap<i32, (Vec<Player>, u32)>) {
         // do noting
     }
 
@@ -322,7 +336,7 @@ impl Role for Pawn {
         self.proxy.vote_with_round(round)
     }
 
-    fn update_self_info(&mut self, round: i32, map: &HashMap<i32, (Vec<Player>, u32)>) {
+    fn update_after_vote(&mut self, round: i32, map: &HashMap<i32, (Vec<Player>, u32)>) {
         // do nothing!
     }
 
@@ -354,7 +368,7 @@ impl Role for Assassin {
         self.proxy.vote_with_round(round)
     }
 
-    fn update_self_info(&mut self, round: i32, map: &HashMap<i32, (Vec<Player>, u32)>) {
+    fn update_after_vote(&mut self, round: i32, map: &HashMap<i32, (Vec<Player>, u32)>) {
         // do nothing
     }
 
