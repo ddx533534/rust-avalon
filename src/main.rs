@@ -7,6 +7,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Mutex;
+use crate::info::CarInfo;
 
 mod role;
 mod info;
@@ -87,9 +88,9 @@ pub fn start_vote(players: Vec<Player>) -> bool {
 
     for (round, round_size) in car_round.iter().enumerate() {
         // println!("===================round: {}, round_size:{}===================", round, round_size);
-        let car = proposal_for_car(first_car_leader, *round_size, &players);
+        let mut car_info = proposal_for_car(first_car_leader, round, *round_size, &players);
         // 发车后投票
-        vote_for_car(round, car, &players, &mut map);
+        vote_for_car(round, &mut car_info, &players, &mut map);
         car_leader += 1;
     }
     let game_res = check_game_res(ROUND_COUNT as i32, ROUND_COUNT as i32, &map);
@@ -97,41 +98,43 @@ pub fn start_vote(players: Vec<Player>) -> bool {
 }
 
 // 发车前生成车队以及对车队表决
-pub fn proposal_for_car(first_car_leader: usize, round_size: usize, players: &Vec<Player>) -> Vec<Player> {
+pub fn proposal_for_car(first_car_leader: usize, round: usize, round_size: usize, players: &Vec<Player>) -> CarInfo {
     // 策略一：只是简单的顺时针+1
-    let mut car: Vec<Player> = Vec::new();
+    let mut car_info = CarInfo::new(round, Vec::new(), round_size, 0);
     for i in first_car_leader..(first_car_leader + round_size) {
-        car.push(players[i % PLAYER_COUNT].clone());
+        car_info.car.push(players[i % PLAYER_COUNT].clone());
     }
     // println!("初始化车队: {:?}", car.iter().map(|player| player.id).collect::<Vec<_>>());
     // 发车前表决
     let mut proposal_for_car: Vec<bool> = Vec::new();
     for i in 0..PROPOSAL_MAX_COUNT {
         for player in players {
-            proposal_for_car.push(player.role.borrow().proposal_for_car(player.id, &car));
+            proposal_for_car.push(player.role.borrow().proposal_for_car(player.id, &car_info));
         }
         if check_proposal_res(&proposal_for_car) {
             break;
         } else {
             // 如果未通过，策略是顺时针加下一个人
-            car.remove(round_size - 1);
-            car.push(players[(first_car_leader + round_size + i + 1) % PLAYER_COUNT].clone())
+            car_info.car.remove(round_size - 1);
+            car_info.car.push(players[(first_car_leader + round_size + i + 1) % PLAYER_COUNT].clone())
         }
     }
     // println!("表决后车队: {:?}", car.iter().map(|player| player.id).collect::<Vec<_>>());
-    car
+    car_info
 }
 
 // 发车后投票
-pub fn vote_for_car(round: usize, car: Vec<Player>, players: &Vec<Player>, map: &mut HashMap<i32, (Vec<Player>, u32)>) {
+pub fn vote_for_car(round: usize, mut car_info: &mut CarInfo, players: &Vec<Player>, map: &mut HashMap<i32, (Vec<Player>, u32)>) {
     let mut vote_res: Vec<Vote> = vec![];
     let mut vote_res_info = String::new();
-    for passenger in &car {
+    for passenger in &car_info.car {
         let vote = passenger.role.borrow().vote_with_round(round as i32);
         vote_res.push(vote);
         vote_res_info += format!("\n{}-{:?}", passenger.id, vote).as_str();
     }
-    map.insert(round as i32, (car, count_vote_res(&vote_res)));
+    let reject_count = count_vote_res(&vote_res) as usize;
+    car_info.reject_count = reject_count;
+    map.insert(round as i32, (car_info.car.clone(), reject_count as u32));
     for player in players {
         player.role.borrow_mut().update_after_vote(round as i32, &map);
     }

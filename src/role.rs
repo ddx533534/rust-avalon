@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::rc::Rc;
-
+use crate::info::CarInfo;
 use crate::role::Camp::{Bad, Good, UNKNOWN};
 use crate::role::Vote::{Approve, Reject};
 
@@ -54,7 +54,7 @@ pub trait Role: Debug + Send + Sync {
     // fn build_for_car(&self, id: u32, size: i32, map: &HashMap<i32, (Vec<Player>, u32)>) -> Vec<i32>;
 
     // 投票前是否同意车队阵容
-    fn proposal_for_car(&self, id: u32, car: &Vec<Player>) -> bool;
+    fn proposal_for_car(&self, id: u32, car: &CarInfo) -> bool;
 
     // 投票
     fn vote_with_round(&self, round: i32) -> Vote;
@@ -80,16 +80,15 @@ impl GoodRoleImpl {
     }
 }
 impl Role for GoodRoleImpl {
-
-    fn proposal_for_car(&self, _id: u32, car: &Vec<Player>) -> bool {
+    fn proposal_for_car(&self, _id: u32, car_info: &CarInfo) -> bool {
         // 基本策略：通过对应成员的分数是否大于0进行表决
         // !car.iter().any(|player| self.score[player.id as usize] < 0)
         // 调整为：判断当前发车成员是否是top N？
-        let len = car.len();
+        let len = car_info.car_size;
         let mut scores = self.score.clone();
         scores.sort_by(|a, b| b.cmp(a));
         let top_scores = &scores[0..len];
-        car.iter().all(|player| top_scores.contains(&self.score[player.id as usize]))
+        car_info.car.iter().all(|player| top_scores.contains(&self.score[player.id as usize]))
     }
 
     fn vote_with_round(&self, round: i32) -> Vote {
@@ -155,9 +154,9 @@ impl Role for GoodRoleImpl {
 struct BadRoleImpl {}
 
 impl Role for BadRoleImpl {
-    fn proposal_for_car(&self, id: u32, car: &Vec<Player>) -> bool {
+    fn proposal_for_car(&self, id: u32, car_info: &CarInfo) -> bool {
         // 基本策略：判断车队有自己，或者有同伴才同意发车
-        car.iter().any(|player| player.id == id) || car.iter().any(|player| player.role.borrow().get_role_camp() == Bad)
+        car_info.car.iter().any(|player| player.id == id) || car_info.car.iter().any(|player| player.role.borrow().get_role_camp() == Bad)
     }
 
     fn vote_with_round(&self, round: i32) -> Vote {
@@ -193,8 +192,8 @@ impl LoyalOfficial {
     }
 }
 impl Role for LoyalOfficial {
-    fn proposal_for_car(&self, id: u32, car: &Vec<Player>) -> bool {
-        self.proxy.proposal_for_car(id, car)
+    fn proposal_for_car(&self, id: u32, car_info: &CarInfo) -> bool {
+        self.proxy.proposal_for_car(id, car_info)
     }
 
     fn vote_with_round(&self, round: i32) -> Vote {
@@ -226,9 +225,9 @@ impl Merlin {
     }
 }
 impl Role for Merlin {
-    fn proposal_for_car(&self, _id: u32, car: &Vec<Player>) -> bool {
+    fn proposal_for_car(&self, _id: u32, car_info: &CarInfo) -> bool {
         // 策略一：梅林判断若车队有任何一个坏蛋都不同意
-        car.iter().any(|player| player.role.borrow().get_role_camp() == Bad)
+        car_info.car.iter().any(|player| player.role.borrow().get_role_camp() == Bad)
     }
 
     fn vote_with_round(&self, round: i32) -> Vote {
@@ -260,8 +259,8 @@ impl Pai {
     }
 }
 impl Role for Pai {
-    fn proposal_for_car(&self, id: u32, car: &Vec<Player>) -> bool {
-        self.proxy.proposal_for_car(id, car)
+    fn proposal_for_car(&self, id: u32, car_info: &CarInfo) -> bool {
+        self.proxy.proposal_for_car(id, car_info)
     }
 
     fn vote_with_round(&self, _round: i32) -> Vote {
@@ -292,9 +291,9 @@ impl Morgana {
     }
 }
 impl Role for Morgana {
-    fn proposal_for_car(&self, id: u32, car: &Vec<Player>) -> bool {
+    fn proposal_for_car(&self, id: u32, car_info: &CarInfo) -> bool {
         // 策略一：莫甘娜判断车队有自己，并且没有同伴才发车
-        car.iter().any(|player| player.id == id) && !car.iter().any(|player| player.role.borrow().get_role_camp() == Bad)
+        car_info.car.iter().any(|player| player.id == id) && !car_info.car.iter().any(|player| player.role.borrow().get_role_camp() == Bad)
     }
 
     fn vote_with_round(&self, round: i32) -> Vote {
@@ -325,8 +324,8 @@ impl Pawn {
     }
 }
 impl Role for Pawn {
-    fn proposal_for_car(&self, id: u32, car: &Vec<Player>) -> bool {
-        self.proxy.proposal_for_car(id, car)
+    fn proposal_for_car(&self, id: u32, car_info: &CarInfo) -> bool {
+        self.proxy.proposal_for_car(id, car_info)
     }
 
     fn vote_with_round(&self, round: i32) -> Vote {
@@ -357,8 +356,8 @@ impl Assassin {
     }
 }
 impl Role for Assassin {
-    fn proposal_for_car(&self, id: u32, car: &Vec<Player>) -> bool {
-        self.proxy.proposal_for_car(id, car)
+    fn proposal_for_car(&self, id: u32, car_info: &CarInfo) -> bool {
+        self.proxy.proposal_for_car(id, car_info)
     }
 
     fn vote_with_round(&self, round: i32) -> Vote {

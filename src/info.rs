@@ -1,18 +1,18 @@
 use crate::role::Player;
 
-struct CarInfo {
+pub struct CarInfo {
     // 车次
-    round: i32,
+    pub round: usize,
     // 车上乘客
-    car: Vec<Player>,
+    pub car: Vec<Player>,
     // 车上人数
-    car_size: i32,
+    pub car_size: usize,
     // 反对票数
-    reject_count: i32,
+    pub reject_count: usize,
 
 }
 impl CarInfo {
-    pub fn new(round: i32, car: Vec<Player>, car_size: i32, reject_count: i32) -> Self {
+    pub fn new(round: usize, car: Vec<Player>, car_size: usize, reject_count: usize) -> Self {
         Self {
             round,
             car,
@@ -21,9 +21,9 @@ impl CarInfo {
         }
     }
 }
-struct GameInfo {
+pub struct GameInfo {
     // 发车信息
-    cars: Vec<CarInfo>,
+    pub cars: Vec<CarInfo>,
 }
 impl GameInfo {
     pub fn default() -> Self {
