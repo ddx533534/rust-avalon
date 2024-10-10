@@ -49,9 +49,9 @@ impl Player {
 }
 
 pub trait Role: Debug + Send + Sync {
-    
-    // 组装车队
-    fn build_for_car(&self, id: u32, size: i32, map: &HashMap<i32, (Vec<Player>, u32)>) -> Vec<i32>;
+    // 
+    // // 组装车队
+    // fn build_for_car(&self, id: u32, size: i32, map: &HashMap<i32, (Vec<Player>, u32)>) -> Vec<i32>;
 
     // 投票前是否同意车队阵容
     fn proposal_for_car(&self, id: u32, car: &Vec<Player>) -> bool;
@@ -80,9 +80,6 @@ impl GoodRoleImpl {
     }
 }
 impl Role for GoodRoleImpl {
-    fn build_for_car(&self, id: u32, size: i32) -> Vec<i32> {
-        todo!()
-    }
 
     fn proposal_for_car(&self, _id: u32, car: &Vec<Player>) -> bool {
         // 基本策略：通过对应成员的分数是否大于0进行表决
@@ -108,7 +105,7 @@ impl Role for GoodRoleImpl {
             let reject_res = value.1;
             // println!("round : {:?} car: {:?} reject_res:{:?}", round, car, reject_res);
             if reject_res == 0 {
-                // 车队通过，每人+20
+                // 车队通过，每人+10
                 for index in car {
                     self.score[index as usize] += B;
                 }

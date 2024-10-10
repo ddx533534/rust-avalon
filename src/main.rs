@@ -9,6 +9,7 @@ use std::rc::Rc;
 use std::sync::Mutex;
 
 mod role;
+mod info;
 
 fn main() {
     // start_game();
